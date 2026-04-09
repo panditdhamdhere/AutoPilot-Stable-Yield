@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "AutoPilot Stable Yield",
-  description: "Professional LI.FI Earn hackathon project starter.",
+  description: "AI-powered DeFi yield optimizer built with LI.FI Earn for one-click deposits and live cross-chain portfolio tracking.",
 };
 
 export default function RootLayout({
