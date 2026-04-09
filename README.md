@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AutoPilot Stable Yield
 
-## Getting Started
+AutoPilot Stable Yield is a production-ready DeFi yield interface built for DeFi Mullet Hackathon #1 using LI.FI Earn + Composer.
 
-First, run the development server:
+It helps users discover top yield vaults, choose a risk profile, execute one-click deposits, and track portfolio positions in a polished, animated UI.
+
+## Core Features
+
+- Vault discovery via LI.FI Earn
+- Strategy engine: `safe`, `balanced`, `aggressive`
+- One-click deposit execution via LI.FI Composer quote flow
+- Portfolio tracking via LI.FI Earn portfolio endpoint
+- Testnet demo mode with separate demo portfolio counter
+- Mobile quick deposit bottom sheet
+- Built-in demo tour and onboarding flow
+
+## Tech Stack
+
+- Next.js 16 (App Router)
+- TypeScript
+- Tailwind CSS
+- RainbowKit + Wagmi + Viem
+- TanStack Query
+- Framer Motion
+- Recharts
+
+## Environment Variables
+
+Copy `.env.example` to `.env` and configure:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Required values:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```env
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=
+LIFI_API_KEY=
+LIFI_EARN_BASE_URL=https://earn.li.fi
+LIFI_COMPOSER_BASE_URL=https://li.quest
+LIFI_INTEGRATOR=defi-mullet-autopilot
+NEXT_PUBLIC_ENABLE_TESTNET_MODE=false
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Notes:
 
-## Learn More
+- Set `NEXT_PUBLIC_ENABLE_TESTNET_MODE=true` for demo-safe testnet behavior.
+- Use `false` for real mainnet execution and portfolio updates.
 
-To learn more about Next.js, take a look at the following resources:
+## Local Development
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm install
+npm run dev
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open `http://localhost:3000`.
 
-## Deploy on Vercel
+## Production Build
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run lint
+npm run build
+npm start
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## API Routes
+
+- `GET /api/earn/vaults` - Fetch and normalize LI.FI Earn vault data
+- `POST /api/earn/quote` - Request LI.FI Composer quote for deposit execution
+- `GET /api/earn/portfolio/[address]/positions` - Fetch normalized portfolio positions
+
+## Demo Flow (Hackathon)
+
+1. Connect wallet
+2. Choose strategy profile
+3. Enter amount and execute deposit
+4. Show transaction confirmation and explorer link
+5. Open portfolio section (or demo portfolio in testnet mode)
+
+## Deployment
+
+Recommended: Vercel
+
+1. Push repository to GitHub
+2. Import project into Vercel
+3. Set all environment variables in Vercel project settings
+4. Deploy
+
+## Security Notes
+
+- Never commit `.env` or secrets
+- Use small amounts for mainnet verification transactions
+- Validate wallet/network before transactions
