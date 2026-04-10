@@ -7,8 +7,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowUpRight,
   BarChart3,
+  Bot,
   ChevronLeft,
   ChevronRight,
+  Send,
   Moon,
   Sun,
   ShieldCheck,
@@ -33,7 +35,7 @@ import {
 } from "wagmi";
 
 import { mockVaults } from "@/lib/mock-vaults";
-import { blendedApy, buildAllocations } from "@/lib/strategy";
+import { blendedApy, buildAllocations, getRiskScoreBreakdown } from "@/lib/strategy";
 import type { PortfolioPosition, StrategyProfile, Vault } from "@/lib/types";
 import { getInputTokenForVaultSymbol } from "@/lib/token-addresses";
 import { isTestnetModeEnabled } from "@/lib/runtime-config";
@@ -73,6 +75,25 @@ function classNames(...items: Array<string | false | null | undefined>) {
 interface ChartTooltipItem {
   name?: string;
   value?: number | string;
+}
+
+interface TxProofItem {
+  hash: `0x${string}`;
+  chainId: number;
+  amount: string;
+  vaultName: string;
+  status: "confirmed" | "failed";
+  timestamp: string;
+}
+
+interface TimelineStep {
+  label: string;
+  state: "idle" | "active" | "done" | "error";
+}
+
+interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
 }
 
 function CustomTooltip({
@@ -131,6 +152,23 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
   const [isTourOpen, setIsTourOpen] = useState(false);
   const [tourStepIndex, setTourStepIndex] = useState(0);
   const [demoPortfolioUsd, setDemoPortfolioUsd] = useState(0);
+  const [timelineSteps, setTimelineSteps] = useState<TimelineStep[]>([
+    { label: "Route preparation", state: "idle" },
+    { label: "Wallet signature", state: "idle" },
+    { label: "Transaction submitted", state: "idle" },
+    { label: "On-chain confirmation", state: "idle" },
+  ]);
+  const [proofWall, setProofWall] = useState<TxProofItem[]>([]);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      role: "assistant",
+      content:
+        "Hi! I can help with risk scoring, strategy selection, deposits, and rebalancing.",
+    },
+  ]);
   const isDark = theme === "dark";
 
   useEffect(() => {
@@ -190,10 +228,27 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
       value: item.allocationPct,
     };
   });
+  const riskBreakdown = getRiskScoreBreakdown(selectedVault, profile);
+  const highestApyVault = activeVaults.reduce((best, current) =>
+    current.apy > best.apy ? current : best,
+  activeVaults[0]);
+  const lowestAllocation = [...allocations].sort((a, b) => a.allocationPct - b.allocationPct)[0];
+  const rebalanceFromVault = activeVaults.find((vault) => vault.id === lowestAllocation?.vaultId);
+  const rebalanceToVault = highestApyVault;
+  const apyDelta = rebalanceFromVault && rebalanceToVault
+    ? Number((rebalanceToVault.apy - rebalanceFromVault.apy).toFixed(2))
+    : 0;
+  const suggestedMovePct = lowestAllocation ? Math.min(15, Math.round(lowestAllocation.allocationPct / 2)) : 0;
 
   async function handleDeposit() {
     setActionError(null);
     setTxHash(null);
+    setTimelineSteps([
+      { label: "Route preparation", state: "active" },
+      { label: "Wallet signature", state: "idle" },
+      { label: "Transaction submitted", state: "idle" },
+      { label: "On-chain confirmation", state: "idle" },
+    ]);
     if (!walletClient || !publicClient || !address) {
       setActionError("Connect your wallet first.");
       return;
@@ -218,6 +273,12 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
 
       let hash: `0x${string}`;
       if (isTestnetModeEnabled) {
+        setTimelineSteps([
+          { label: "Route preparation", state: "done" },
+          { label: "Wallet signature", state: "active" },
+          { label: "Transaction submitted", state: "idle" },
+          { label: "On-chain confirmation", state: "idle" },
+        ]);
         setTxStatus("Testnet demo mode: sending a zero-value proof transaction...");
         hash = await walletClient.sendTransaction({
           account: address,
@@ -257,6 +318,12 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
           throw new Error(quote.details ?? quote.error ?? "Quote unavailable");
         }
 
+        setTimelineSteps([
+          { label: "Route preparation", state: "done" },
+          { label: "Wallet signature", state: "active" },
+          { label: "Transaction submitted", state: "idle" },
+          { label: "On-chain confirmation", state: "idle" },
+        ]);
         setTxStatus("Waiting for wallet signature...");
         hash = await walletClient.sendTransaction({
           account: address,
@@ -275,21 +342,117 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
       }
 
       setTxHash(hash);
+      setTimelineSteps([
+        { label: "Route preparation", state: "done" },
+        { label: "Wallet signature", state: "done" },
+        { label: "Transaction submitted", state: "active" },
+        { label: "On-chain confirmation", state: "idle" },
+      ]);
       setTxStatus("Transaction sent. Confirming...");
       await publicClient.waitForTransactionReceipt({ hash });
       setTxStatus(
         isTestnetModeEnabled ? "Testnet demo transaction confirmed." : "Deposit confirmed on-chain.",
       );
+      setTimelineSteps([
+        { label: "Route preparation", state: "done" },
+        { label: "Wallet signature", state: "done" },
+        { label: "Transaction submitted", state: "done" },
+        { label: "On-chain confirmation", state: "done" },
+      ]);
       if (isTestnetModeEnabled) {
         setDemoPortfolioUsd((current) => Number((current + Number(amount)).toFixed(2)));
       }
+      setProofWall((current) => [
+        {
+          hash,
+          chainId: selectedVault.chainId,
+          amount,
+          vaultName: selectedVault.name,
+          status: "confirmed" as const,
+          timestamp: new Date().toISOString(),
+        },
+        ...current,
+      ].slice(0, 5));
       setIsMobileDepositOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["portfolio-positions", address] });
     } catch (error) {
       setTxStatus("Failed");
       setActionError(error instanceof Error ? error.message : "Failed to execute deposit");
+      setTimelineSteps((current) =>
+        current.map((step) =>
+          step.state === "active" ? { ...step, state: "error" } : step,
+        ),
+      );
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleSendChat() {
+    const message = chatInput.trim();
+    if (!message || isChatLoading) return;
+    setChatInput("");
+
+    const nextMessages: ChatMessage[] = [...chatMessages, { role: "user", content: message }];
+    setChatMessages(nextMessages);
+    setIsChatLoading(true);
+
+    try {
+      const chatContext = {
+        mode: isTestnetModeEnabled ? "testnet" : "mainnet",
+        strategyProfile: profile,
+        expectedApy: apy,
+        selectedVault: selectedVault
+          ? {
+              name: selectedVault.name,
+              protocol: selectedVault.protocol,
+              chain: selectedVault.chain,
+              apy: selectedVault.apy,
+              riskLevel: selectedVault.riskLevel,
+            }
+          : undefined,
+        riskScore:
+          riskBreakdown.maxScore > 0
+            ? { value: riskBreakdown.finalScore, max: riskBreakdown.maxScore }
+            : undefined,
+        rebalanceSuggestion:
+          rebalanceFromVault && rebalanceToVault && apyDelta > 0
+            ? {
+                fromProtocol: rebalanceFromVault.protocol,
+                toProtocol: rebalanceToVault.protocol,
+                apyDelta,
+                movePct: suggestedMovePct,
+              }
+            : undefined,
+        txStatus,
+      };
+
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: nextMessages.slice(-10),
+          context: chatContext,
+        }),
+      });
+      const json = (await response.json()) as { answer?: string; error?: string };
+      if (!response.ok || !json.answer) {
+        throw new Error(json.error ?? "Chat request failed");
+      }
+      setChatMessages((current) => [...current, { role: "assistant", content: json.answer! }]);
+    } catch (error) {
+      setChatMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content:
+            error instanceof Error
+              ? `Assistant unavailable: ${error.message}`
+              : "Assistant unavailable right now.",
+        },
+      ]);
+    } finally {
+      setIsChatLoading(false);
     }
   }
 
@@ -449,6 +612,47 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
           </div>
 
           <div className="mt-5 space-y-3">
+            <div
+              className={classNames(
+                "rounded-2xl border p-4",
+                isDark ? "border-cyan-400/20 bg-cyan-500/10" : "border-cyan-200 bg-cyan-50/70",
+              )}
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <p className={classNames("text-sm font-bold", isDark ? "text-cyan-100" : "text-cyan-900")}>
+                  Risk Score Breakdown
+                </p>
+                <p className={classNames("text-sm font-semibold", isDark ? "text-cyan-100" : "text-cyan-900")}>
+                  {riskBreakdown.finalScore}/{riskBreakdown.maxScore}
+                </p>
+              </div>
+              <div className="space-y-2">
+                {riskBreakdown.factors.map((factor) => {
+                  const pct = Math.round((factor.score / factor.max) * 100);
+                  return (
+                    <div key={factor.label}>
+                      <div className="flex items-center justify-between text-xs">
+                        <p className={classNames("font-medium", isDark ? "text-slate-100" : "text-slate-800")}>
+                          {factor.label}
+                        </p>
+                        <p className={classNames(isDark ? "text-slate-200" : "text-slate-700")}>
+                          {factor.score}/{factor.max}
+                        </p>
+                      </div>
+                      <div className="mt-1 h-1.5 w-full rounded-full bg-slate-300/40">
+                        <div
+                          className="h-1.5 rounded-full bg-linear-to-r from-indigo-500 to-cyan-400"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <p className={classNames("mt-1 text-[11px]", isDark ? "text-slate-300" : "text-slate-600")}>
+                        {factor.note}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             <AnimatePresence mode="popLayout">
               {allocations.map((allocation, index) => {
                 const vault = activeVaults.find((item) => item.id === allocation.vaultId);
@@ -559,6 +763,32 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
             <p className={classNames("text-xs", isDark ? "text-slate-200" : "text-slate-500")}>
               Status: {txStatus}
             </p>
+            <div className="mt-1 space-y-1.5">
+              {timelineSteps.map((step) => (
+                <div key={step.label} className="flex items-center gap-2 text-xs">
+                  <span
+                    className={classNames(
+                      "inline-block h-2 w-2 rounded-full",
+                      step.state === "done"
+                        ? "bg-emerald-400"
+                        : step.state === "active"
+                          ? "bg-cyan-400"
+                          : step.state === "error"
+                            ? "bg-red-500"
+                            : "bg-slate-400/50",
+                    )}
+                  />
+                  <span
+                    className={classNames(
+                      isDark ? "text-slate-200" : "text-slate-600",
+                      step.state === "active" && "font-semibold",
+                    )}
+                  >
+                    {step.label}
+                  </span>
+                </div>
+              ))}
+            </div>
             {txHash ? (
               <a
                 className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline"
@@ -570,6 +800,34 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
               </a>
             ) : null}
             {actionError ? <p className="text-xs font-medium text-red-600">{actionError}</p> : null}
+          </div>
+          <div
+            className={classNames(
+              "mt-3 rounded-2xl border p-4 transition-colors duration-500",
+              isDark ? "border-emerald-300/20 bg-emerald-500/10" : "border-emerald-200 bg-emerald-50",
+            )}
+          >
+            <p className={classNames("text-xs font-semibold uppercase tracking-wide", isDark ? "text-emerald-200" : "text-emerald-800")}>
+              Rebalance Recommendation
+            </p>
+            {rebalanceFromVault && rebalanceToVault && apyDelta > 0 ? (
+              <>
+                <p className={classNames("mt-1 text-sm font-semibold", isDark ? "text-white" : "text-slate-900")}>
+                  Move ~{suggestedMovePct}% from {rebalanceFromVault.protocol} to {rebalanceToVault.protocol}
+                </p>
+                <p className={classNames("mt-1 text-xs", isDark ? "text-emerald-100" : "text-emerald-700")}>
+                  Potential APY uplift: +{apyDelta}% (from {rebalanceFromVault.apy.toFixed(1)}% to{" "}
+                  {rebalanceToVault.apy.toFixed(1)}%).
+                </p>
+                <p className={classNames("mt-1 text-xs", isDark ? "text-slate-200" : "text-slate-600")}>
+                  Why: your current lowest-weight vault has lower yield than the top available vault for this strategy.
+                </p>
+              </>
+            ) : (
+              <p className={classNames("mt-1 text-xs", isDark ? "text-emerald-100" : "text-emerald-700")}>
+                Portfolio allocation is already near-optimal for this profile right now.
+              </p>
+            )}
           </div>
         </motion.article>
       </section>
@@ -672,6 +930,62 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
         )}
       </motion.section>
 
+      <motion.section
+        initial={{ opacity: 0, y: 14 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className={classNames(
+          "rounded-3xl border p-5 shadow-xl backdrop-blur-md transition-colors duration-500",
+          isDark ? "border-white/10 bg-white/5" : "border-white/60 bg-white/75",
+        )}
+      >
+        <h2 className={classNames("text-lg font-semibold", isDark ? "text-white" : "text-slate-900")}>
+          Transaction Proof Wall
+        </h2>
+        <p className={classNames("mt-1 text-sm", isDark ? "text-slate-200" : "text-slate-600")}>
+          Latest confirmed transactions and execution proof for your session.
+        </p>
+        <div className="mt-4 space-y-2">
+          {proofWall.length === 0 ? (
+            <p className={classNames("text-sm", isDark ? "text-slate-300" : "text-slate-600")}>
+              No transaction proofs yet. Execute a deposit to populate this wall.
+            </p>
+          ) : (
+            proofWall.map((item) => (
+              <div
+                key={`${item.hash}-${item.timestamp}`}
+                className={classNames(
+                  "flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3",
+                  isDark ? "border-white/10 bg-slate-900/40" : "border-slate-200 bg-white",
+                )}
+              >
+                <div>
+                  <p className={classNames("text-sm font-semibold", isDark ? "text-white" : "text-slate-900")}>
+                    {item.vaultName}
+                  </p>
+                  <p className={classNames("text-xs", isDark ? "text-slate-300" : "text-slate-600")}>
+                    Amount: {item.amount} | {new Date(item.timestamp).toLocaleTimeString()}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className={classNames("text-xs font-semibold", item.status === "confirmed" ? "text-emerald-500" : "text-red-500")}>
+                    {item.status.toUpperCase()}
+                  </p>
+                  <a
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:underline"
+                    href={`${explorerByChainId[item.chainId] ?? "https://etherscan.io/tx/"}${item.hash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {item.hash.slice(0, 12)}... <ArrowUpRight size={12} />
+                  </a>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.section>
+
       <div className="fixed right-4 bottom-4 z-30 md:hidden">
         <motion.button
           whileTap={{ scale: 0.96 }}
@@ -680,6 +994,86 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
         >
           Quick Deposit
         </motion.button>
+      </div>
+
+      <div className="fixed right-4 bottom-20 z-40 md:bottom-6">
+        <AnimatePresence>
+          {isChatOpen ? (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 10, scale: 0.98 }}
+              className={classNames(
+                "mb-2 w-[320px] rounded-2xl border shadow-2xl",
+                isDark ? "border-white/10 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-900",
+              )}
+            >
+              <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                <p className="inline-flex items-center gap-2 text-sm font-semibold">
+                  <Bot size={14} /> AI Assistant
+                </p>
+                <button type="button" onClick={() => setIsChatOpen(false)} className="rounded p-1 hover:bg-white/10">
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="max-h-72 space-y-2 overflow-y-auto px-3 py-3 text-sm">
+                {chatMessages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={classNames(
+                      "rounded-xl px-3 py-2",
+                      message.role === "assistant"
+                        ? isDark
+                          ? "bg-white/10 text-slate-100"
+                          : "bg-slate-100 text-slate-800"
+                        : "bg-linear-to-r from-indigo-600 to-cyan-500 text-white",
+                    )}
+                  >
+                    {message.content}
+                  </div>
+                ))}
+                {isChatLoading ? (
+                  <p className={classNames("text-xs", isDark ? "text-slate-300" : "text-slate-500")}>
+                    Thinking...
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2 border-t border-white/10 p-3">
+                <input
+                  value={chatInput}
+                  onChange={(event) => setChatInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void handleSendChat();
+                    }
+                  }}
+                  placeholder="Ask about strategy or risks..."
+                  className={classNames(
+                    "flex-1 rounded-xl border px-3 py-2 text-sm outline-none",
+                    isDark ? "border-white/20 bg-white/10 text-white" : "border-slate-300 text-slate-900",
+                  )}
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSendChat()}
+                  disabled={isChatLoading}
+                  className="rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 p-2 text-white disabled:opacity-50"
+                >
+                  <Send size={14} />
+                </button>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+        <button
+          type="button"
+          onClick={() => setIsChatOpen((open) => !open)}
+          className="inline-flex items-center gap-2 rounded-full bg-linear-to-r from-indigo-600 to-cyan-500 px-4 py-2 text-sm font-semibold text-white shadow-xl"
+        >
+          <Bot size={14} />
+          {isChatOpen ? "Close Chat" : "Ask AI"}
+        </button>
       </div>
 
       <AnimatePresence>
@@ -769,7 +1163,7 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
       <AnimatePresence>
         {isTourOpen ? (
           <motion.div
-            className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 p-4 md:items-center"
+            className="fixed inset-0 z-60 flex items-end justify-center bg-black/60 p-4 md:items-center"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
