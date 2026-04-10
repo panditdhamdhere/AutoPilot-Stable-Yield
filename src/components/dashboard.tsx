@@ -228,7 +228,21 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
   const allocations = useMemo(() => buildAllocations(activeVaults, profile), [activeVaults, profile]);
   const apy = useMemo(() => blendedApy(allocations, activeVaults), [allocations, activeVaults]);
   const bestAllocation = allocations[0];
-  const selectedVault = activeVaults.find((item) => item.id === bestAllocation?.vaultId);
+  const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
+  const defaultVaultId = bestAllocation?.vaultId ?? activeVaults[0]?.id ?? null;
+  const selectedVault = activeVaults.find((item) => item.id === (selectedVaultId ?? defaultVaultId));
+
+  useEffect(() => {
+    if (!defaultVaultId) return;
+    if (!selectedVaultId) {
+      setSelectedVaultId(defaultVaultId);
+      return;
+    }
+    const exists = activeVaults.some((vault) => vault.id === selectedVaultId);
+    if (!exists) {
+      setSelectedVaultId(defaultVaultId);
+    }
+  }, [activeVaults, defaultVaultId, selectedVaultId]);
 
   const chartData = allocations.map((item) => {
     const vault = activeVaults.find((v) => v.id === item.vaultId);
@@ -240,9 +254,9 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
   const riskBreakdown = getRiskScoreBreakdown(selectedVault, profile);
   const highestApyVault = activeVaults.reduce((best, current) =>
     current.apy > best.apy ? current : best,
-  activeVaults[0]);
+  selectedVault ?? activeVaults[0]);
   const lowestAllocation = [...allocations].sort((a, b) => a.allocationPct - b.allocationPct)[0];
-  const rebalanceFromVault = activeVaults.find((vault) => vault.id === lowestAllocation?.vaultId);
+  const rebalanceFromVault = selectedVault ?? activeVaults.find((vault) => vault.id === lowestAllocation?.vaultId);
   const rebalanceToVault = highestApyVault;
   const apyDelta = rebalanceFromVault && rebalanceToVault
     ? Number((rebalanceToVault.apy - rebalanceFromVault.apy).toFixed(2))
@@ -789,6 +803,22 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
             <p className={classNames("text-xs", isDark ? "text-slate-200" : "text-slate-600")}>
               Target: {selectedVault?.name ?? "N/A"} ({selectedVault?.chain ?? "N/A"})
             </p>
+            <select
+              value={selectedVault?.id ?? ""}
+              onChange={(event) => setSelectedVaultId(event.target.value)}
+              className={classNames(
+                "w-full rounded-xl border px-3 py-2 text-sm outline-none transition",
+                isDark
+                  ? "border-white/20 bg-white/10 text-white"
+                  : "border-slate-300 bg-white text-slate-900",
+              )}
+            >
+              {activeVaults.map((vault) => (
+                <option key={vault.id} value={vault.id}>
+                  {vault.protocol} - {vault.chain} ({vault.apy.toFixed(1)}% APY)
+                </option>
+              ))}
+            </select>
             <input
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
