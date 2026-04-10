@@ -1,7 +1,5 @@
-import { Dashboard } from "@/components/dashboard";
-import { getVaults } from "@/lib/lifi";
+import { LandingPage } from "@/components/landing-page";
 
 export default async function Home() {
-  const vaults = await getVaults();
-  return <Dashboard vaults={vaults} />;
+  return <LandingPage />;
 }
