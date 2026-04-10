@@ -168,6 +168,9 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [copyProofStatus, setCopyProofStatus] = useState<"idle" | "copied" | "error">("idle");
+  const [vaultChainFilter, setVaultChainFilter] = useState("all");
+  const [vaultRiskFilter, setVaultRiskFilter] = useState("all");
+  const [vaultAssetFilter, setVaultAssetFilter] = useState("all");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -252,6 +255,14 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
     };
   });
   const riskBreakdown = getRiskScoreBreakdown(selectedVault, profile);
+  const uniqueChains = Array.from(new Set(activeVaults.map((vault) => vault.chain))).sort();
+  const uniqueAssets = Array.from(new Set(activeVaults.map((vault) => vault.symbol))).sort();
+  const filteredVaultCatalog = activeVaults.filter((vault) => {
+    const chainOk = vaultChainFilter === "all" || vault.chain === vaultChainFilter;
+    const riskOk = vaultRiskFilter === "all" || vault.riskLevel === vaultRiskFilter;
+    const assetOk = vaultAssetFilter === "all" || vault.symbol === vaultAssetFilter;
+    return chainOk && riskOk && assetOk;
+  });
   const highestApyVault = activeVaults.reduce((best, current) =>
     current.apy > best.apy ? current : best,
   selectedVault ?? activeVaults[0]);
@@ -636,6 +647,147 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
             </p>
           </motion.article>
         ))}
+      </section>
+
+      <section
+        className={classNames(
+          "rounded-3xl border p-5 shadow-xl backdrop-blur-md transition-colors duration-500",
+          isDark ? "border-white/10 bg-white/5" : "border-white/60 bg-white/75",
+        )}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <h2 className={classNames("text-lg font-semibold", isDark ? "text-white" : "text-slate-900")}>
+            Supported Vault Catalog
+          </h2>
+          <p className={classNames("text-sm", isDark ? "text-slate-200" : "text-slate-600")}>
+            {activeVaults.length} vaults
+          </p>
+        </div>
+        <p className={classNames("mt-1 text-sm", isDark ? "text-slate-300" : "text-slate-600")}>
+          Real-time vaults currently available for strategy selection and deposit routing.
+        </p>
+        <div className="mt-4 grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
+          <select
+            value={vaultChainFilter}
+            onChange={(event) => setVaultChainFilter(event.target.value)}
+            className={classNames(
+              "rounded-xl border px-3 py-2 text-sm",
+              isDark ? "border-white/20 bg-white/10 text-white" : "border-slate-300 bg-white text-slate-900",
+            )}
+          >
+            <option value="all">All Chains</option>
+            {uniqueChains.map((chain) => (
+              <option key={chain} value={chain}>
+                {chain}
+              </option>
+            ))}
+          </select>
+          <select
+            value={vaultRiskFilter}
+            onChange={(event) => setVaultRiskFilter(event.target.value)}
+            className={classNames(
+              "rounded-xl border px-3 py-2 text-sm",
+              isDark ? "border-white/20 bg-white/10 text-white" : "border-slate-300 bg-white text-slate-900",
+            )}
+          >
+            <option value="all">All Risk Levels</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+          <select
+            value={vaultAssetFilter}
+            onChange={(event) => setVaultAssetFilter(event.target.value)}
+            className={classNames(
+              "rounded-xl border px-3 py-2 text-sm",
+              isDark ? "border-white/20 bg-white/10 text-white" : "border-slate-300 bg-white text-slate-900",
+            )}
+          >
+            <option value="all">All Assets</option>
+            {uniqueAssets.map((asset) => (
+              <option key={asset} value={asset}>
+                {asset}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => {
+              setVaultChainFilter("all");
+              setVaultRiskFilter("all");
+              setVaultAssetFilter("all");
+            }}
+            className="rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 px-3 py-2 text-sm font-semibold text-white"
+          >
+            Reset
+          </button>
+        </div>
+        <div className="mt-4 overflow-x-auto">
+          <table className="min-w-full border-separate border-spacing-y-2">
+            <thead>
+              <tr>
+                {["Vault", "Protocol", "Chain", "Asset", "APY", "TVL", "Risk"].map((header) => (
+                  <th
+                    key={header}
+                    className={classNames(
+                      "px-3 text-left text-xs font-semibold uppercase",
+                      isDark ? "text-slate-300" : "text-slate-500",
+                    )}
+                  >
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredVaultCatalog.map((vault) => (
+                <tr
+                  key={vault.id}
+                  className={classNames(
+                    "rounded-xl",
+                    isDark ? "bg-slate-900/40" : "bg-white",
+                  )}
+                >
+                  <td className={classNames("rounded-l-xl px-3 py-2 text-sm font-semibold", isDark ? "text-white" : "text-slate-900")}>
+                    {vault.name}
+                  </td>
+                  <td className={classNames("px-3 py-2 text-sm", isDark ? "text-slate-200" : "text-slate-700")}>
+                    {vault.protocol}
+                  </td>
+                  <td className={classNames("px-3 py-2 text-sm", isDark ? "text-slate-200" : "text-slate-700")}>
+                    {vault.chain}
+                  </td>
+                  <td className={classNames("px-3 py-2 text-sm", isDark ? "text-slate-200" : "text-slate-700")}>
+                    {vault.symbol}
+                  </td>
+                  <td className="px-3 py-2 text-sm font-semibold text-emerald-500">{vault.apy.toFixed(2)}%</td>
+                  <td className={classNames("px-3 py-2 text-sm", isDark ? "text-slate-200" : "text-slate-700")}>
+                    {prettyUsd(vault.tvlUsd)}
+                  </td>
+                  <td className="rounded-r-xl px-3 py-2">
+                    <span
+                      className={classNames(
+                        "rounded-full px-2 py-1 text-xs font-semibold",
+                        vault.riskLevel === "low"
+                          ? "bg-emerald-100 text-emerald-700"
+                          : vault.riskLevel === "medium"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-rose-100 text-rose-700",
+                      )}
+                    >
+                      {vault.riskLevel}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {filteredVaultCatalog.length === 0 ? (
+            <p className={classNames("mt-2 text-sm", isDark ? "text-slate-300" : "text-slate-600")}>
+              No vaults match the selected filters.
+            </p>
+          ) : null}
+        </div>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">

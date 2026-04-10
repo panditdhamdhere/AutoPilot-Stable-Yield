@@ -24,6 +24,9 @@ const vaultListSchema = z.array(vaultSchema);
 
 const EARN_BASE_URL = process.env.LIFI_EARN_BASE_URL ?? "https://earn.li.fi";
 const LIFI_API_KEY = process.env.LIFI_API_KEY;
+const STABLE_ASSETS = new Set(["USDC", "USDT", "DAI", "USDE", "USDS", "SUSDE"]);
+const MIN_REALISTIC_APY = 0.1;
+const MAX_REALISTIC_APY = 35;
 
 interface RawVault {
   id?: string;
@@ -111,9 +114,19 @@ export async function getVaults(): Promise<Vault[]> {
     const raw = (await response.json()) as unknown;
     const normalized = normalizeApiVaults(raw);
     const transactional = normalized.filter((vault) => vault.isTransactional && vault.address);
+    const realisticStableVaults = transactional.filter((vault) => {
+      const symbol = vault.symbol.toUpperCase();
+      return (
+        STABLE_ASSETS.has(symbol) &&
+        vault.apy >= MIN_REALISTIC_APY &&
+        vault.apy <= MAX_REALISTIC_APY
+      );
+    });
     const result = vaultListSchema.safeParse(normalized);
     if (!result.success || result.data.length === 0) return mockVaults;
-    return transactional.length > 0 ? transactional : result.data;
+    if (realisticStableVaults.length > 0) return realisticStableVaults;
+    if (transactional.length > 0) return transactional;
+    return result.data;
   } catch {
     return mockVaults;
   }
