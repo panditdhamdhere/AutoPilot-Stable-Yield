@@ -54,6 +54,12 @@ function toRiskLevel(apyPct: number): Vault["riskLevel"] {
   return "low";
 }
 
+function normalizeApyPercent(rawApy: number): number {
+  if (!Number.isFinite(rawApy) || rawApy < 0) return 0;
+  const asPercent = rawApy <= 1 ? rawApy * 100 : rawApy;
+  return Number(Math.min(asPercent, 100).toFixed(2));
+}
+
 function normalizeApiVaults(data: unknown): Vault[] {
   const source: unknown[] = Array.isArray(data)
     ? data
@@ -64,6 +70,9 @@ function normalizeApiVaults(data: unknown): Vault[] {
   return source
     .map((itemRaw) => {
       const item = itemRaw as RawVault;
+      const apyPercent = normalizeApyPercent(
+        Number(item.analytics?.apy?.total ?? item.apy ?? 0),
+      );
       return {
         id: item.id ?? `${item.chainId}-${item.address}`,
         name: item.name ?? `${item.protocol?.name ?? "Vault"} ${item.asset?.symbol ?? ""}`,
@@ -72,11 +81,11 @@ function normalizeApiVaults(data: unknown): Vault[] {
         chainId: Number(item.chainId ?? 1),
         address: item.address ?? "",
         symbol: item.asset?.symbol ?? item.symbol ?? "USDC",
-        apy: Number(item.analytics?.apy?.total ?? item.apy ?? 0) * 100,
+        apy: apyPercent,
         tvlUsd: Number(item.analytics?.tvl?.usd ?? item.tvlUsd ?? item.tvl ?? 0),
         riskLevel:
           item.riskLevel ??
-          toRiskLevel(Number(item.analytics?.apy?.total ?? item.apy ?? 0) * 100),
+          toRiskLevel(apyPercent),
         withdrawalHours: Number(item.withdrawalHours ?? 0),
         isTransactional: Boolean(item.isTransactional ?? true),
       };
