@@ -29,6 +29,7 @@ import {
 import { parseUnits } from "viem";
 import {
   useAccount,
+  useBalance,
   usePublicClient,
   useSwitchChain,
   useWalletClient,
@@ -58,6 +59,18 @@ const explorerByChainId: Record<number, string> = {
   421614: "https://sepolia.arbiscan.io/tx/",
   11155420: "https://sepolia-optimism.etherscan.io/tx/",
   80002: "https://amoy.polygonscan.com/tx/",
+};
+
+const minGasByChainWei: Record<number, bigint> = {
+  1: BigInt("1500000000000000"),
+  10: BigInt("700000000000000"),
+  8453: BigInt("700000000000000"),
+  42161: BigInt("700000000000000"),
+  11155111: BigInt("300000000000000"),
+  84532: BigInt("300000000000000"),
+  421614: BigInt("300000000000000"),
+  11155420: BigInt("300000000000000"),
+  80002: BigInt("300000000000000"),
 };
 
 const chainLogoMap: Record<string, string> = {
@@ -178,6 +191,9 @@ interface ChatMessage {
   content: string;
 }
 
+type VaultSortKey = "name" | "protocol" | "chain" | "symbol" | "apy" | "tvlUsd" | "riskLevel";
+const proofWallStorageKey = "autopilot-proof-wall-v1";
+
 function CustomTooltip({
   active,
   payload,
@@ -245,9 +261,12 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [copyProofStatus, setCopyProofStatus] = useState<"idle" | "copied" | "error">("idle");
+  const [exportProofStatus, setExportProofStatus] = useState<"idle" | "done" | "error">("idle");
   const [vaultChainFilter, setVaultChainFilter] = useState("all");
   const [vaultRiskFilter, setVaultRiskFilter] = useState("all");
   const [vaultAssetFilter, setVaultAssetFilter] = useState("all");
+  const [vaultSortKey, setVaultSortKey] = useState<VaultSortKey>("apy");
+  const [vaultSortDir, setVaultSortDir] = useState<"asc" | "desc">("desc");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -267,12 +286,28 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
     if (!seenOnboarding) {
       setShowOnboarding(true);
     }
+    const savedProofWall = window.localStorage.getItem(proofWallStorageKey);
+    if (savedProofWall) {
+      try {
+        const parsed = JSON.parse(savedProofWall) as TxProofItem[];
+        if (Array.isArray(parsed)) {
+          setProofWall(parsed.slice(0, 20));
+        }
+      } catch {
+        // Ignore invalid local cache.
+      }
+    }
   }, []);
 
   useEffect(() => {
     if (!isMounted) return;
     window.localStorage.setItem("autopilot-theme", theme);
   }, [theme, isMounted]);
+
+  useEffect(() => {
+    if (!isMounted) return;
+    window.localStorage.setItem(proofWallStorageKey, JSON.stringify(proofWall));
+  }, [proofWall, isMounted]);
 
   const liveVaultsQuery = useQuery({
     queryKey: ["earn-vaults"],
@@ -311,6 +346,15 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
   const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
   const defaultVaultId = bestAllocation?.vaultId ?? activeVaults[0]?.id ?? null;
   const selectedVault = activeVaults.find((item) => item.id === (selectedVaultId ?? defaultVaultId));
+  const selectedVaultChainId = selectedVault?.chainId;
+  const minGasRequired = selectedVaultChainId
+    ? (minGasByChainWei[selectedVaultChainId] ?? BigInt("500000000000000"))
+    : BigInt("500000000000000");
+  const selectedChainBalance = useBalance({
+    address,
+    chainId: selectedVaultChainId,
+    query: { enabled: Boolean(address && selectedVaultChainId) },
+  });
 
   useEffect(() => {
     if (!defaultVaultId) return;
@@ -340,6 +384,32 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
     const assetOk = vaultAssetFilter === "all" || vault.symbol === vaultAssetFilter;
     return chainOk && riskOk && assetOk;
   });
+  const sortedVaultCatalog = useMemo(() => {
+    const riskRank: Record<Vault["riskLevel"], number> = {
+      low: 1,
+      medium: 2,
+      high: 3,
+    };
+    const direction = vaultSortDir === "asc" ? 1 : -1;
+    return [...filteredVaultCatalog].sort((a, b) => {
+      if (vaultSortKey === "riskLevel") {
+        return (riskRank[a.riskLevel] - riskRank[b.riskLevel]) * direction;
+      }
+      if (vaultSortKey === "apy" || vaultSortKey === "tvlUsd") {
+        return ((a[vaultSortKey] as number) - (b[vaultSortKey] as number)) * direction;
+      }
+      return String(a[vaultSortKey]).localeCompare(String(b[vaultSortKey])) * direction;
+    });
+  }, [filteredVaultCatalog, vaultSortDir, vaultSortKey]);
+
+  function handleSort(nextKey: VaultSortKey) {
+    if (vaultSortKey === nextKey) {
+      setVaultSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setVaultSortKey(nextKey);
+    setVaultSortDir(nextKey === "apy" || nextKey === "tvlUsd" ? "desc" : "asc");
+  }
   const highestApyVault = activeVaults.reduce((best, current) =>
     current.apy > best.apy ? current : best,
   selectedVault ?? activeVaults[0]);
@@ -370,6 +440,12 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
     }
     if (!Number(amount) || Number(amount) <= 0) {
       setActionError("Enter a valid amount.");
+      return;
+    }
+    if (selectedChainBalance.data && selectedChainBalance.data.value < minGasRequired) {
+      setActionError(
+        `Low gas balance on ${selectedVault.chain}. Add more native token for network fees before retrying.`,
+      );
       return;
     }
 
@@ -592,6 +668,53 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
     }
   }
 
+  function triggerDownload(filename: string, content: string, mimeType: string) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportProofWall(format: "json" | "csv") {
+    if (proofWall.length === 0) return;
+    try {
+      if (format === "json") {
+        triggerDownload(
+          "autopilot-proof-wall.json",
+          JSON.stringify(proofWall, null, 2),
+          "application/json",
+        );
+      } else {
+        const header = "timestamp,status,chainId,vaultName,amount,txHash,explorer";
+        const rows = proofWall.map((item) => {
+          const explorer = `${explorerByChainId[item.chainId] ?? "https://etherscan.io/tx/"}${item.hash}`;
+          return [
+            item.timestamp,
+            item.status,
+            item.chainId,
+            `"${item.vaultName.replaceAll('"', '""')}"`,
+            item.amount,
+            item.hash,
+            explorer,
+          ].join(",");
+        });
+        triggerDownload(
+          "autopilot-proof-wall.csv",
+          [header, ...rows].join("\n"),
+          "text/csv;charset=utf-8;",
+        );
+      }
+      setExportProofStatus("done");
+      window.setTimeout(() => setExportProofStatus("idle"), 1800);
+    } catch {
+      setExportProofStatus("error");
+      window.setTimeout(() => setExportProofStatus("idle"), 1800);
+    }
+  }
+
   return (
     <main
       className={classNames(
@@ -803,21 +926,36 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
           <table className="min-w-full border-separate border-spacing-y-2">
             <thead>
               <tr>
-                {["Vault", "Protocol", "Chain", "Asset", "APY", "TVL", "Risk"].map((header) => (
+                {[
+                  { label: "Vault", key: "name" as const },
+                  { label: "Protocol", key: "protocol" as const },
+                  { label: "Chain", key: "chain" as const },
+                  { label: "Asset", key: "symbol" as const },
+                  { label: "APY", key: "apy" as const },
+                  { label: "TVL", key: "tvlUsd" as const },
+                  { label: "Risk", key: "riskLevel" as const },
+                ].map((header) => (
                   <th
-                    key={header}
+                    key={header.label}
                     className={classNames(
                       "px-3 text-left text-xs font-semibold uppercase",
                       isDark ? "text-slate-300" : "text-slate-500",
                     )}
                   >
-                    {header}
+                    <button
+                      type="button"
+                      onClick={() => handleSort(header.key)}
+                      className="inline-flex items-center gap-1 transition hover:text-cyan-400"
+                    >
+                      {header.label}
+                      {vaultSortKey === header.key ? (vaultSortDir === "asc" ? "↑" : "↓") : null}
+                    </button>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filteredVaultCatalog.map((vault) => (
+              {sortedVaultCatalog.map((vault) => (
                 <tr
                   key={vault.id}
                   className={classNames(
@@ -1053,6 +1191,16 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
                 ) : null}
               </span>
             </p>
+            {chainId !== selectedVault?.chainId ? (
+              <p className="rounded-lg border border-amber-300/40 bg-amber-500/15 px-2 py-1 text-xs text-amber-100">
+                Preflight: wallet will switch to {selectedVault?.chain}. Ensure gas token is available there.
+              </p>
+            ) : null}
+            {selectedChainBalance.data && selectedChainBalance.data.value < minGasRequired ? (
+              <p className="rounded-lg border border-red-300/40 bg-red-500/15 px-2 py-1 text-xs text-red-200">
+                Preflight warning: low gas balance on {selectedVault?.chain}. Transaction may fail.
+              </p>
+            ) : null}
             <select
               value={selectedVault?.id ?? ""}
               onChange={(event) => setSelectedVaultId(event.target.value)}
@@ -1295,7 +1443,7 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
         <p className={classNames("mt-1 text-sm", isDark ? "text-slate-200" : "text-slate-600")}>
           Latest confirmed transactions and execution proof for your session.
         </p>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => void handleCopyDemoProof()}
@@ -1308,6 +1456,27 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
                 ? "Copy Failed"
                 : "Copy Demo Proof"}
           </button>
+          <button
+            type="button"
+            onClick={() => handleExportProofWall("json")}
+            disabled={proofWall.length === 0}
+            className="rounded-xl border border-cyan-400/40 bg-cyan-500/15 px-3 py-2 text-xs font-semibold text-cyan-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Export JSON
+          </button>
+          <button
+            type="button"
+            onClick={() => handleExportProofWall("csv")}
+            disabled={proofWall.length === 0}
+            className="rounded-xl border border-indigo-400/40 bg-indigo-500/15 px-3 py-2 text-xs font-semibold text-indigo-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Export CSV
+          </button>
+          {exportProofStatus !== "idle" ? (
+            <span className={classNames("inline-flex items-center text-xs", exportProofStatus === "done" ? "text-emerald-400" : "text-red-400")}>
+              {exportProofStatus === "done" ? "Exported" : "Export failed"}
+            </span>
+          ) : null}
         </div>
         <div className="mt-4 space-y-2">
           {proofWall.length === 0 ? (
