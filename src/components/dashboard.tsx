@@ -60,6 +60,47 @@ const explorerByChainId: Record<number, string> = {
   80002: "https://amoy.polygonscan.com/tx/",
 };
 
+const chainLogoMap: Record<string, string> = {
+  Ethereum:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/eth.png",
+  Sepolia:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/eth.png",
+  Arbitrum:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/arb.png",
+  "Arbitrum Sepolia":
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/arb.png",
+  Base:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/base.png",
+  "Base Sepolia":
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/base.png",
+  Optimism:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/op.png",
+  "Optimism Sepolia":
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/op.png",
+  Polygon:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/matic.png",
+  "Polygon Amoy":
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/matic.png",
+  BSC: "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/bnb.png",
+  Monad:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/eth.png",
+};
+
+const tokenLogoMap: Record<string, string> = {
+  ETH: "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/eth.png",
+  USDC:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/usdc.png",
+  USDT:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/usdt.png",
+  DAI: "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/dai.png",
+  USDE:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/usde.png",
+  USDS:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/usds.png",
+  SUSDE:
+    "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/32/color/usde.png",
+};
+
 function prettyUsd(value: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -75,6 +116,42 @@ function prettyTime(timestampMs: number | undefined): string {
 
 function classNames(...items: Array<string | false | null | undefined>) {
   return items.filter(Boolean).join(" ");
+}
+
+function LogoBadge({
+  label,
+  logoUrl,
+  size = 18,
+}: {
+  label: string;
+  logoUrl?: string;
+  size?: number;
+}) {
+  const fallback = label.slice(0, 2).toUpperCase();
+  return (
+    <span
+      className="inline-flex items-center justify-center overflow-hidden rounded-full bg-slate-700/30 text-[10px] font-bold text-white"
+      style={{ width: size, height: size }}
+      title={label}
+    >
+      {logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={logoUrl}
+          alt={`${label} logo`}
+          className="h-full w-full object-cover"
+          onError={(event) => {
+            const target = event.currentTarget;
+            target.style.display = "none";
+            const parent = target.parentElement;
+            if (parent) parent.textContent = fallback;
+          }}
+        />
+      ) : (
+        fallback
+      )}
+    </span>
+  );
 }
 
 interface ChartTooltipItem {
@@ -755,10 +832,19 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
                     {vault.protocol}
                   </td>
                   <td className={classNames("px-3 py-2 text-sm", isDark ? "text-slate-200" : "text-slate-700")}>
-                    {vault.chain}
+                    <span className="inline-flex items-center gap-2">
+                      <LogoBadge label={vault.chain} logoUrl={chainLogoMap[vault.chain]} />
+                      {vault.chain}
+                    </span>
                   </td>
                   <td className={classNames("px-3 py-2 text-sm", isDark ? "text-slate-200" : "text-slate-700")}>
-                    {vault.symbol}
+                    <span className="inline-flex items-center gap-2">
+                      <LogoBadge
+                        label={vault.symbol}
+                        logoUrl={tokenLogoMap[vault.symbol.toUpperCase()]}
+                      />
+                      {vault.symbol}
+                    </span>
                   </td>
                   <td className="px-3 py-2 text-sm font-semibold text-emerald-500">{vault.apy.toFixed(2)}%</td>
                   <td className={classNames("px-3 py-2 text-sm", isDark ? "text-slate-200" : "text-slate-700")}>
@@ -953,7 +1039,19 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
               Live Deposit
             </p>
             <p className={classNames("text-xs", isDark ? "text-slate-200" : "text-slate-600")}>
-              Target: {selectedVault?.name ?? "N/A"} ({selectedVault?.chain ?? "N/A"})
+              <span className="inline-flex items-center gap-1">
+                Target: {selectedVault?.name ?? "N/A"}
+                {selectedVault ? (
+                  <>
+                    <LogoBadge
+                      label={selectedVault.chain}
+                      logoUrl={chainLogoMap[selectedVault.chain]}
+                      size={14}
+                    />
+                    <span>({selectedVault.chain})</span>
+                  </>
+                ) : null}
+              </span>
             </p>
             <select
               value={selectedVault?.id ?? ""}
@@ -1366,7 +1464,19 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
                 </button>
               </div>
               <p className="text-xs text-slate-300">
-                Target: {selectedVault?.name ?? "N/A"} ({selectedVault?.chain ?? "N/A"})
+                <span className="inline-flex items-center gap-1">
+                  Target: {selectedVault?.name ?? "N/A"}
+                  {selectedVault ? (
+                    <>
+                      <LogoBadge
+                        label={selectedVault.chain}
+                        logoUrl={chainLogoMap[selectedVault.chain]}
+                        size={14}
+                      />
+                      <span>({selectedVault.chain})</span>
+                    </>
+                  ) : null}
+                </span>
               </p>
               <input
                 value={amount}
