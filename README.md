@@ -1,63 +1,51 @@
 # AutoPilot Stable Yield
 
-AutoPilot Stable Yield is a production-ready DeFi yield interface built for DeFi Mullet Hackathon #1 using LI.FI Earn + Composer.
+**AutoPilot Stable Yield** is a Next.js dashboard for stable-yield vaults. It integrates [LI.FI Earn](https://docs.li.fi/earn/overview) for vault data and [LI.FI Composer](https://docs.li.fi/composer/overview) for deposit quotes. Wallets stay non-custodial: the app proposes allocations and routes; users sign in their own wallet.
 
-It helps users discover top yield vaults, choose a risk profile, execute one-click deposits, and track portfolio positions in a polished, animated UI.
+**Live deployment:** [auto-pilot-stable-yield.vercel.app](https://auto-pilot-stable-yield.vercel.app/)
 
-## Core Features
+| Route | Purpose |
+|-------|---------|
+| `/` | Marketing landing |
+| `/dashboard` | Main application |
 
-- Vault discovery via LI.FI Earn
-- Strategy engine: `safe`, `balanced`, `aggressive`
-- One-click deposit execution via LI.FI Composer quote flow
-- Portfolio tracking via LI.FI Earn portfolio endpoint
-- Testnet demo mode with separate demo portfolio counter
-- Mobile quick deposit bottom sheet
-- Built-in demo tour and onboarding flow
+---
 
-## Tech Stack
+## Overview
 
-- Next.js 16 (App Router)
-- TypeScript
-- Tailwind CSS
-- RainbowKit + Wagmi + Viem
-- TanStack Query
-- Framer Motion
-- Recharts
+The app surfaces Earn vaults with filters (stable-focused assets and APY bands) so displayed yields stay in a realistic range. A lightweight **strategy layer** maps three profiles—`safe`, `balanced`, `aggressive`—to suggested allocations and shows a **risk score breakdown**. A **rebalance suggestion** appears when a low-weight vault trails a higher-APY alternative, with rationale in the UI.
 
-## Environment Variables
+**Deposits:** On mainnet-style configuration, deposits go through Composer quotes. With **testnet demo mode** enabled, the project uses a separate demo transaction path and mock-friendly behavior so Composer is not used for fake mainnet execution.
 
-Copy `.env.example` to `.env` and configure:
+**Portfolio:** Positions come from the Earn portfolio API when mainnet-style mode is active. In testnet demo mode, the mainnet portfolio response is intentionally empty; a **demo portfolio** counter tracks demo transactions separately.
 
-```bash
-cp .env.example .env
-```
+**Proof wall:** Transaction history includes explorer links, copyable proof text, JSON/CSV export, and `localStorage` persistence across reloads.
 
-Required values:
+**Vault catalog:** Filterable table (chain, risk, asset), sortable columns, chain and token presentation.
 
-```env
-NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=
-LIFI_API_KEY=
-LIFI_EARN_BASE_URL=https://earn.li.fi
-LIFI_COMPOSER_BASE_URL=https://li.quest
-LIFI_INTEGRATOR=defi-mullet-autopilot
-NEXT_PUBLIC_ENABLE_TESTNET_MODE=false
-```
+**Other UI:** Dark/light theme, onboarding tour, optional **Ask AI** assistant backed by OpenAI when `OPENAI_API_KEY` is set.
 
-Notes:
+---
 
-- Set `NEXT_PUBLIC_ENABLE_TESTNET_MODE=true` for demo-safe testnet behavior.
-- Use `false` for real mainnet execution and portfolio updates.
+## Tech stack
 
-## Local Development
+- Next.js (App Router), TypeScript, Tailwind CSS  
+- RainbowKit, wagmi, viem  
+- TanStack Query, Framer Motion, Recharts  
+
+LI.FI and WalletConnect credentials are supplied via environment variables; server-side API routes proxy Earn and Composer so the `LIFI_API_KEY` is not exposed to the browser.
+
+---
+
+## Local development
 
 ```bash
 npm install
+cp .env.example .env
 npm run dev
 ```
 
-Open `http://localhost:3000`.
-
-## Production Build
+After configuring variables (see below), the app is available at `http://localhost:3000` (landing) and `http://localhost:3000/dashboard`.
 
 ```bash
 npm run lint
@@ -65,31 +53,50 @@ npm run build
 npm start
 ```
 
-## API Routes
+`npm start` runs the production build locally.
 
-- `GET /api/earn/vaults` - Fetch and normalize LI.FI Earn vault data
-- `POST /api/earn/quote` - Request LI.FI Composer quote for deposit execution
-- `GET /api/earn/portfolio/[address]/positions` - Fetch normalized portfolio positions
+---
 
-## Demo Flow (Hackathon)
+## Environment variables
 
-1. Connect wallet
-2. Choose strategy profile
-3. Enter amount and execute deposit
-4. Show transaction confirmation and explorer link
-5. Open portfolio section (or demo portfolio in testnet mode)
+| Variable | Role |
+|----------|------|
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | WalletConnect Cloud project ID for RainbowKit. |
+| `LIFI_API_KEY` | [LI.FI API access](https://li.fi/plans/); sent as `x-lifi-api-key` on Earn and Composer proxies. |
+| `LIFI_EARN_BASE_URL` | Earn API base URL (default `https://earn.li.fi`). |
+| `LIFI_COMPOSER_BASE_URL` | Composer base URL (default `https://li.quest`). |
+| `LIFI_INTEGRATOR` | Integrator identifier on quotes. |
+| `NEXT_PUBLIC_ENABLE_TESTNET_MODE` | `true`: testnet chains, demo tx path, empty mainnet portfolio API body. `false`: mainnet Earn, Composer, and portfolio behavior. |
+| `OPENAI_API_KEY` | Optional; enables `/api/chat` and the dashboard assistant. |
+| `OPENAI_MODEL` | Optional; defaults to `gpt-4o-mini`. |
+
+`.env` should not be committed. Hosted deployments (e.g. Vercel) expect the same keys in project environment settings.
+
+---
+
+## HTTP API (Next.js routes)
+
+| Method & path | Behavior |
+|---------------|----------|
+| `GET /api/earn/vaults` | Proxies Earn; normalizes vaults for the UI. |
+| `POST /api/earn/quote` | Composer quote for deposits; not used for mainnet execution in testnet demo mode. |
+| `GET /api/earn/portfolio/[address]/positions` | Portfolio positions; empty response in testnet demo mode with an explanatory note. |
+| `POST /api/chat` | Optional OpenAI proxy for the assistant. |
+
+---
 
 ## Deployment
 
-Recommended: Vercel
+Typical setup on Vercel: connect the Git repository, select the Next.js preset, define production (and optionally preview) environment variables, then deploy. Production issues often trace to a missing `LIFI_API_KEY`, an invalid WalletConnect project ID, or `NEXT_PUBLIC_ENABLE_TESTNET_MODE` not matching the intended network behavior.
 
-1. Push repository to GitHub
-2. Import project into Vercel
-3. Set all environment variables in Vercel project settings
-4. Deploy
+---
 
-## Security Notes
+## Disclaimer
 
-- Never commit `.env` or secrets
-- Use small amounts for mainnet verification transactions
-- Validate wallet/network before transactions
+AutoPilot Stable Yield is experimental. Yields and protocol risk change over time; strategy and rebalance logic are heuristics, not financial advice. Anyone using mainnet should limit exposure to what they can afford to lose.
+
+---
+
+## License
+
+No formal open-source license is bundled in this repository; treat the code as provided as-is unless a `LICENSE` file is added later.
