@@ -68,6 +68,11 @@ function prettyUsd(value: number): string {
   }).format(value);
 }
 
+function prettyTime(timestampMs: number | undefined): string {
+  if (!timestampMs) return "N/A";
+  return new Date(timestampMs).toLocaleTimeString();
+}
+
 function classNames(...items: Array<string | false | null | undefined>) {
   return items.filter(Boolean).join(" ");
 }
@@ -162,6 +167,7 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
+  const [copyProofStatus, setCopyProofStatus] = useState<"idle" | "copied" | "error">("idle");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -216,6 +222,9 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
   });
 
   const activeVaults = liveVaultsQuery.data?.length ? liveVaultsQuery.data : vaults.length ? vaults : mockVaults;
+  const isLiveVaultData = Boolean(liveVaultsQuery.data?.length);
+  const dataHealthLabel = liveVaultsQuery.isError ? "API Error" : isLiveVaultData ? "Live" : "Fallback";
+  const lastUpdatedLabel = prettyTime(liveVaultsQuery.dataUpdatedAt);
   const allocations = useMemo(() => buildAllocations(activeVaults, profile), [activeVaults, profile]);
   const apy = useMemo(() => blendedApy(allocations, activeVaults), [allocations, activeVaults]);
   const bestAllocation = allocations[0];
@@ -456,6 +465,31 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
     }
   }
 
+  async function handleCopyDemoProof() {
+    const latest = proofWall[0];
+    if (!latest) return;
+    const explorer = `${explorerByChainId[latest.chainId] ?? "https://etherscan.io/tx/"}${latest.hash}`;
+    const proofText = [
+      "AutoPilot Stable Yield - Demo Proof",
+      `Mode: ${isTestnetModeEnabled ? "Testnet Demo" : "Mainnet Live"}`,
+      `Vault: ${latest.vaultName}`,
+      `Amount: ${latest.amount}`,
+      `Status: ${latest.status}`,
+      `Time: ${new Date(latest.timestamp).toISOString()}`,
+      `Tx Hash: ${latest.hash}`,
+      `Explorer: ${explorer}`,
+    ].join("\n");
+
+    try {
+      await navigator.clipboard.writeText(proofText);
+      setCopyProofStatus("copied");
+      window.setTimeout(() => setCopyProofStatus("idle"), 1800);
+    } catch {
+      setCopyProofStatus("error");
+      window.setTimeout(() => setCopyProofStatus("idle"), 1800);
+    }
+  }
+
   return (
     <main
       className={classNames(
@@ -500,6 +534,23 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
                 Mainnet Live Mode
               </p>
             )}
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span
+                className={classNames(
+                  "inline-flex rounded-full border px-3 py-1 font-semibold",
+                  dataHealthLabel === "Live"
+                    ? "border-emerald-300/40 bg-emerald-500/20 text-emerald-100"
+                    : dataHealthLabel === "Fallback"
+                      ? "border-amber-300/40 bg-amber-500/20 text-amber-100"
+                      : "border-red-300/40 bg-red-500/20 text-red-100",
+                )}
+              >
+                Data: {dataHealthLabel}
+              </span>
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 font-medium text-slate-100">
+                Last updated: {lastUpdatedLabel}
+              </span>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -750,6 +801,25 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
               )}
               placeholder="Amount (USDC)"
             />
+            <div className="flex gap-2">
+              {["10", "50", "100"].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setAmount(preset)}
+                  className={classNames(
+                    "rounded-lg px-3 py-1 text-xs font-semibold transition",
+                    amount === preset
+                      ? "bg-linear-to-r from-indigo-600 to-cyan-500 text-white"
+                      : isDark
+                        ? "bg-white/10 text-slate-100 hover:bg-white/20"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                  )}
+                >
+                  {preset} USDC
+                </button>
+              ))}
+            </div>
             <motion.button
               type="button"
               whileHover={{ scale: 1.01 }}
@@ -945,6 +1015,20 @@ export function Dashboard({ vaults }: { vaults: Vault[] }) {
         <p className={classNames("mt-1 text-sm", isDark ? "text-slate-200" : "text-slate-600")}>
           Latest confirmed transactions and execution proof for your session.
         </p>
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => void handleCopyDemoProof()}
+            disabled={proofWall.length === 0}
+            className="rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {copyProofStatus === "copied"
+              ? "Copied!"
+              : copyProofStatus === "error"
+                ? "Copy Failed"
+                : "Copy Demo Proof"}
+          </button>
+        </div>
         <div className="mt-4 space-y-2">
           {proofWall.length === 0 ? (
             <p className={classNames("text-sm", isDark ? "text-slate-300" : "text-slate-600")}>
