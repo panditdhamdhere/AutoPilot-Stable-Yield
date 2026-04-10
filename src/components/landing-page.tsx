@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, Shield, Sparkles, Wand2, Wallet } from "lucide-react";
+import { ArrowRight, Shield, Wand2, Wallet } from "lucide-react";
 
 const container = {
   hidden: { opacity: 0 },
